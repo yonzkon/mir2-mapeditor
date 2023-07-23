@@ -296,12 +296,9 @@ namespace Map_Editor
             gridUpdate(false);
 
             //loads embedded icons
-            System.Reflection.Assembly thisExe;
-            thisExe = System.Reflection.Assembly.GetExecutingAssembly();
-            System.IO.Stream file = thisExe.GetManifestResourceStream("Map_Editor.Resources.Square.png");
             using (Graphics g = Graphics.FromImage(cellHighlight))
             {
-                g.DrawImage(Image.FromStream(file), new Point(0, 0));
+                g.DrawImage(Properties.Resources.Square, new Point(0, 0));
             }
         }
 
