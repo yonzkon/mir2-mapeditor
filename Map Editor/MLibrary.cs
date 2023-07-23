@@ -7,8 +7,8 @@ using System.IO;
 using System.IO.Compression;
 using System.Runtime.InteropServices;
 using System.Windows.Forms;
-using Microsoft.DirectX;
-using Microsoft.DirectX.Direct3D;
+using SlimDX;
+using SlimDX.Direct3D9;
 
 namespace Map_Editor
 {
@@ -752,17 +752,15 @@ namespace Map_Editor
                     return;
                 if ((w < 2) || (h < 2)) return;
 
-                GraphicsStream stream = null;
+                DataRectangle stream = null;
 
                 ImageTexture = new Texture(DXManager.Device, w, h, 1, Usage.None, Format.A8R8G8B8, Pool.Managed);
                 stream = ImageTexture.LockRectangle(0, LockFlags.Discard);
-                Data = (byte*)stream.InternalDataPointer;
+                Data = (byte*)stream.Data.DataPointer;
 
-                byte[] decomp = DecompressImage(reader.ReadBytes(Length));
+                DecompressImage(reader.ReadBytes(Length), stream.Data);
 
-                stream.Write(decomp, 0, decomp.Length);
-
-                stream.Dispose();
+                stream.Data.Dispose();
                 ImageTexture.UnlockRectangle(0);
 
                 if (HasMask)
@@ -774,11 +772,9 @@ namespace Map_Editor
                     MaskImageTexture = new Texture(DXManager.Device, w, h, 1, Usage.None, Format.A8R8G8B8, Pool.Managed);
                     stream = MaskImageTexture.LockRectangle(0, LockFlags.Discard);
 
-                    decomp = DecompressImage(reader.ReadBytes(Length));
+                    DecompressImage(reader.ReadBytes(Length), stream.Data);
 
-                    stream.Write(decomp, 0, decomp.Length);
-
-                    stream.Dispose();
+                    stream.Data.Dispose();
                     MaskImageTexture.UnlockRectangle(0);
                 }
 
@@ -854,26 +850,11 @@ namespace Map_Editor
                 }
             }
 
-            private static byte[] DecompressImage(byte[] image)
+            private static void DecompressImage(byte[] image, Stream destination)
             {
                 using (GZipStream stream = new GZipStream(new MemoryStream(image), CompressionMode.Decompress))
                 {
-                    const int size = 4096;
-                    byte[] buffer = new byte[size];
-                    using (MemoryStream memory = new MemoryStream())
-                    {
-                        int count = 0;
-                        do
-                        {
-                            count = stream.Read(buffer, 0, size);
-                            if (count > 0)
-                            {
-                                memory.Write(buffer, 0, count);
-                            }
-                        }
-                        while (count > 0);
-                        return memory.ToArray();
-                    }
+                    stream.CopyTo(destination);
                 }
             }
 

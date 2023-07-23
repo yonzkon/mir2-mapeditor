@@ -5,9 +5,10 @@ using System.Drawing;
 using System.Drawing.Drawing2D;
 using System.Drawing.Imaging;
 using System.Windows.Forms;
-using Microsoft.DirectX;
-using Microsoft.DirectX.Direct3D;
-using Blend = Microsoft.DirectX.Direct3D.Blend;
+using Map_Editor.Properties;
+using SlimDX;
+using SlimDX.Direct3D9;
+using Blend = SlimDX.Direct3D9.Blend;
 
 namespace Map_Editor
 {
@@ -86,7 +87,7 @@ namespace Map_Editor
                 //检索或设置后台缓冲区的格式//	一种 32 位 RGB 像素格式，其中每种颜色使用 8 位。
                 BackBufferFormat = Format.X8R8G8B8,
                 //检索或设置呈现标志 //通知驱动程序，后台缓冲区包含视频数据
-                PresentFlag = PresentFlag.LockableBackBuffer,
+                PresentFlags = PresentFlags.LockableBackBuffer,
                 //检索或设置交换链的后台缓冲区的高度
                 BackBufferWidth = control.Width,
                 //检索或设置交换链的后台缓冲区的宽度
@@ -101,8 +102,10 @@ namespace Map_Editor
                 Windowed = true
             };
 
+            Direct3D d3d = new Direct3D();
+
             //检索特定于设备的信息。
-            Caps devCaps = Manager.GetDeviceCaps(0, DeviceType.Hardware);
+            Capabilities devCaps = d3d.GetDeviceCaps(0, DeviceType.Hardware);
 
             // 指定设备类型。
 
@@ -132,12 +135,12 @@ namespace Map_Editor
 
 
             //指示设备是否支持硬件转换和照明。
-            if (devCaps.DeviceCaps.SupportsHardwareTransformAndLight)
+            if ((devCaps.DeviceCaps & DeviceCaps.HWTransformAndLight) != 0)
                 //指定硬件顶点处理。
                 devFlags = CreateFlags.HardwareVertexProcessing;
 
             //指示设备是否支持光栅化、转换、照明和阴影在硬件。
-            if (devCaps.DeviceCaps.SupportsPureDevice)
+            if ((devCaps.DeviceCaps & DeviceCaps.PureDevice) != 0)
                 //如果设备不支持顶点处理，应用程序可以只使用改变后的顶点。
                 devFlags |= CreateFlags.PureDevice;
 
@@ -157,55 +160,14 @@ namespace Map_Editor
 
             //presentationParameters
             //    一个 PresentParameters 对象，它描述要创建的设备的表示参数。
-            Device = new Device(Manager.Adapters.Default.Adapter, devType, control, devFlags, Parameters);
-            //在设备将要丢失时发生
-            Device.DeviceLost += Device_DeviceLost;
-            //设备调整大小时发生
-            Device.DeviceResizing += Device_DeviceResizing;
-            //重置设备之后发生
-            Device.DeviceReset += Device_DeviceReset;
-            //当调用 Dispose 方法时，或者当设备对象被终结并被垃圾回收器回收时。
-            Device.Disposing += Device_Disposing;
-            //Device.DeviceLost += (o, e) => DeviceLost = true;
-            //Device.DeviceResizing += (o, e) => e.Cancel = true;
-            //Device.DeviceReset += (o, e) => LoadTextures();
-            //Device.Disposing += (o, e) => Clean();
+            Device = new Device(d3d, d3d.Adapters.DefaultAdapter.Adapter, devType, control.Handle, devFlags, Parameters);
 
             //允许使用Microsoft Windows图形设备接口(GDI)在全屏应用程序对话框。
-            Device.SetDialogBoxesEnabled(true);
+            Device.SetDialogBoxMode(true);
 
             LoadTextures();
         }
 
-        #region Device 事件
-        private static void Device_Disposing(object sender, EventArgs e)
-        {
-            Clean();
-        }
-
-        private static void Device_DeviceReset(object sender, EventArgs e)
-        {
-            LoadTextures();
-        }
-
-        private static void Device_DeviceResizing(object sender, CancelEventArgs e)
-        {
-          
-            if (_control.Size==new Size(0,0) )
-            {
-                e.Cancel = true;
-            }
-            else
-            {
-                e.Cancel = false;
-            }
-        }
-
-        private static void Device_DeviceLost(object sender, EventArgs e)
-        {
-            DeviceLost = true;
-        }
-        #endregion
         /// <summary>
         /// 加载纹理
         /// </summary>
@@ -232,7 +194,7 @@ namespace Map_Editor
             //backBufferType
             //    要返回的后台缓冲区的类型。只有 Mono 是有效值。
             //返回值 ：一个 Surface，它表示返回的后台缓冲区图面。
-            MainSurface = Device.GetBackBuffer(0, 0, BackBufferType.Mono);
+            MainSurface = Device.GetBackBuffer(0, 0);
             CurrentSurface = MainSurface;
 
             //SetRenderTarget 为设备设置新的颜色缓冲区。 
@@ -360,9 +322,9 @@ namespace Map_Editor
                 int height = LightSizes[i].Y;
                 Texture light = new Texture(Device, width, height, 1, Usage.None, Format.A8R8G8B8, Pool.Managed);
                 ////LockRectangle 锁定纹理资源中的矩形
-                using (GraphicsStream stream = light.LockRectangle(0, LockFlags.Discard))
+                DataRectangle stream = light.LockRectangle(0, LockFlags.Discard);
                 //用指定的大小、像素格式和像素数据初始化 Bitmap 类的新实例
-                using (Bitmap image = new Bitmap(width, height, width * 4, PixelFormat.Format32bppArgb, (IntPtr)stream.InternalDataPointer))
+                using (Bitmap image = new Bitmap(width, height, width * 4, PixelFormat.Format32bppArgb, stream.Data.DataPointer))
                 {
                     //从指定的 Image 创建新的 Graphics。
                     using (Graphics graphics = Graphics.FromImage(image))
@@ -414,10 +376,12 @@ namespace Map_Editor
                         }
                     }
                 }
+
+                light.UnlockRectangle(0);
                 //添加light
                 Lights.Add(light);
                 //为light添加 Disposing 事件 ，用来Lights.Remove(light);
-                light.Disposing += (o, e) => Lights.Remove(light);
+                //light.Disposing += (o, e) => Lights.Remove(light);
             }
         }
         /// <summary>
@@ -441,7 +405,6 @@ namespace Map_Editor
         {
             try
             {
-                int result;
                 //CheckCooperativeLevel 为窗口应用程序或全屏应用程序报告 Direct3D 设备的当前协作级别状态。 
                 //参数
 
@@ -450,7 +413,7 @@ namespace Map_Editor
 
                 //返回值
                 //如果设备可操作并且调用应用程序可以继续，则为 true；如果设备已丢失或者需要重置，则为 false。 
-                Device.CheckCooperativeLevel(out result);
+                Result result = DXManager.Device.TestCooperativeLevel();
 
                 //    -------------ResultCode)result 返回值类型-------------
                 //    AlreadyLocked	设备已锁定。 
@@ -480,7 +443,7 @@ namespace Map_Editor
                 // 	UnsupportedFactorValue	设备不支持指定的纹理因子值。 
                 // 	UnsupportedTextureFilter	设备不支持指定的纹理筛选器。 
                 //    WrongTextureFormat	像素格式的纹理图面无效。 
-                switch ((ResultCode)result)
+                /*switch ((ResultCode)result)
                 {
                     //设备不支持所查询的技术。 
                     case ResultCode.DeviceNotReset:
@@ -513,12 +476,24 @@ namespace Map_Editor
                         //为设备设置新的颜色缓冲区。
                         Device.SetRenderTarget(0, CurrentSurface);
                         break;
+                }*/
+                if (result.Code == ResultCode.DeviceLost.Code) return;
+
+                if (result.Code == ResultCode.DeviceNotReset.Code)
+                {
+                    Device.Reset(Parameters);
+                    return;
                 }
+
+                if (result.Code != ResultCode.Success.Code) return;
+
+                DXManager.DeviceLost = false;
             }
             catch
             {
             }
         }
+
         /// <summary>
         /// 尝试恢复
         /// </summary>
@@ -553,7 +528,7 @@ namespace Map_Editor
             try
             {
                 ////获取指定的后台缓冲区
-                MainSurface = Device.GetBackBuffer(0, 0, BackBufferType.Mono);
+                MainSurface = Device.GetBackBuffer(0, 0);
                 CurrentSurface = MainSurface;
                 ////为设备设置新的颜色缓冲区。
                 Device.SetRenderTarget(0, MainSurface);
@@ -573,7 +548,7 @@ namespace Map_Editor
             //强制将所有批子画面都提交给设备。 
             Sprite.Flush();
             //获取设备的呈现状态值。AlphaBlendEnable= true;
-            Device.RenderState.AlphaBlendEnable = true;
+            Device.SetRenderState(RenderState.AlphaBlendEnable, true);
             if (opacity >= 1 || opacity < 0)
             {
 
@@ -591,21 +566,24 @@ namespace Map_Editor
                 //	Zero	混合因子为 (0, 0, 0, 0)。 
 
                 //获取或设置颜色混合模式。 
-                Device.RenderState.SourceBlend = Blend.SourceAlpha;
+                Device.SetRenderState(RenderState.SourceBlend, Blend.SourceAlpha);
                 //表示当前的混合模式或要设置的混合模式
-                Device.RenderState.DestinationBlend = Blend.InvSourceAlpha;
+                Device.SetRenderState(RenderState.DestinationBlend, Blend.InverseSourceAlpha);
                 //获取或者设置Alpha混合模式
-                Device.RenderState.AlphaSourceBlend = Blend.One;
+                Device.SetRenderState(RenderState.SourceBlendAlpha, Blend.One);
                 //使用现有颜色混合绘制操作
-                Device.RenderState.BlendFactor = Color.FromArgb(255, 255, 255, 255);
+                Device.SetRenderState(RenderState.BlendFactor, Color.FromArgb(255, 255, 255, 255).ToArgb());
             }
             else
             {
-                Device.RenderState.SourceBlend = Blend.BlendFactor;
-                Device.RenderState.DestinationBlend = Blend.InvBlendFactor;
-                Device.RenderState.AlphaSourceBlend = Blend.SourceAlpha;
-                Device.RenderState.BlendFactor = Color.FromArgb((byte)(255 * opacity), (byte)(255 * opacity),
-                                                                (byte)(255 * opacity), (byte)(255 * opacity));
+                Device.SetRenderState(RenderState.SourceBlend, Blend.BlendFactor);
+                Device.SetRenderState(RenderState.DestinationBlend, Blend.InverseBlendFactor);
+                Device.SetRenderState(RenderState.SourceBlendAlpha, Blend.SourceAlpha);
+                Device.SetRenderState(RenderState.BlendFactor, Color.FromArgb(
+                    (byte)(255 * opacity),
+                    (byte)(255 * opacity),
+                    (byte)(255 * opacity),
+                    (byte)(255 * opacity)).ToArgb());
             }
             Opacity = opacity;
             //强制将所有批子画面都提交给设备。
@@ -644,11 +622,14 @@ namespace Map_Editor
                 // SortTexture	绘制前，按纹理子画面进行排序。在绘制统一深度的不重叠子画面时，建议使用此选项；例如，用 Font 绘制屏幕对齐的文本时。 
 
                 Sprite.Begin(SpriteFlags.DoNotSaveState);//禁止在调用 Begin 和 End 时保存或还原设备状态。 
-                Device.RenderState.AlphaBlendEnable = true;
-                Device.RenderState.SourceBlend = Blend.BlendFactor;
-                Device.RenderState.DestinationBlend = Blend.One;
-                Device.RenderState.BlendFactor = Color.FromArgb((byte)(255 * rate), (byte)(255 * rate),
-                                                                (byte)(255 * rate), (byte)(255 * rate));
+                Device.SetRenderState(RenderState.AlphaBlendEnable, true);
+                Device.SetRenderState(RenderState.SourceBlend, Blend.SourceAlpha);
+                Device.SetRenderState(RenderState.DestinationBlend, Blend.One);
+                Device.SetRenderState(RenderState.BlendFactor, Color.FromArgb(
+                    (byte)(255 * rate), 
+                    (byte)(255 * rate),
+                    (byte)(255 * rate),
+                    (byte)(255 * rate)).ToArgb());
             }
             else
                 //Sprite.Begin准备子画面的绘制
